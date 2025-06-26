@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
-
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -18,13 +17,13 @@ type apiConfig struct {
 	db               database.Client
 	jwtSecret        string
 	platform         string
+	s3Client         *s3.Client
 	filepathRoot     string
 	assetsRoot       string
 	s3Bucket         string
 	s3Region         string
 	s3CfDistribution string
 	port             string
-	s3Client         *s3.Client
 }
 
 func main() {
@@ -82,7 +81,7 @@ func main() {
 
 	awsCfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(s3Region))
 	if err != nil {
-		log.Fatal("Error reading AWS configuration")
+		log.Fatal(err)
 	}
 	s3Client := s3.NewFromConfig(awsCfg)
 
@@ -90,13 +89,13 @@ func main() {
 		db:               db,
 		jwtSecret:        jwtSecret,
 		platform:         platform,
+		s3Client:         s3Client,
 		filepathRoot:     filepathRoot,
 		assetsRoot:       assetsRoot,
 		s3Bucket:         s3Bucket,
 		s3Region:         s3Region,
 		s3CfDistribution: s3CfDistribution,
 		port:             port,
-		s3Client:         s3Client,
 	}
 
 	err = cfg.ensureAssetsDir()
