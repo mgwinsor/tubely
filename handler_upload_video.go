@@ -87,8 +87,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	processedVideoPath, err := processVideoForFastStart(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error processing video file", err)
+		return
+	}
+	defer os.Remove(processedVideoPath)
+
+	processedVideo, err := os.Open(processedVideoPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error processing video file", err)
+		return
+	}
+	defer processedVideo.Close()
+
 	directory := ""
-	aspectRatio, err := getVideoAspectRatio(tempFile.Name())
+	aspectRatio, err := getVideoAspectRatio(processedVideoPath)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error determining aspect ratio", err)
 		return
@@ -107,7 +121,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         aws.String(key),
-		Body:        tempFile,
+		Body:        processedVideo,
 		ContentType: aws.String(mediaType),
 	})
 	if err != nil {
@@ -126,21 +140,13 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	respondWithJSON(w, http.StatusOK, video)
 }
 
-type Stream struct {
-	Height int `json:"height"`
-	Width  int `json:"width"`
-}
-
-type StreamsList struct {
-	Streams []Stream `json:"streams"`
-}
-
 func getVideoAspectRatio(filePath string) (string, error) {
 	cmd := exec.Command("ffprobe",
 		"-v",
 		"error",
 		"-print_format",
-		"json", "-show_streams",
+		"json",
+		"-show_streams",
 		filePath,
 	)
 
@@ -175,4 +181,24 @@ func getVideoAspectRatio(filePath string) (string, error) {
 		return "9:16", nil
 	}
 	return "other", nil
+}
+
+func processVideoForFastStart(filePath string) (string, error) {
+	outputPath := filePath + ".processing"
+	cmd := exec.Command("ffmpeg",
+		"-i",
+		filePath,
+		"-c",
+		"copy",
+		"-movflags",
+		"faststart",
+		"-f",
+		"mp4",
+		outputPath,
+	)
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("ffmpeg error: %v", err)
+	}
+	return outputPath, nil
 }
